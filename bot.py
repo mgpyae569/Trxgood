@@ -23,15 +23,26 @@ class Config:
         "WIN_STICKER_ID", 
         "CAACAgUAAxkBAAFNlBJqP1tGPYT24rEmDIJnXLpy6esnGwAC-hwAAqcUuFbgWCEwPN_WJTwE"
     )
-    PORT = int(os.environ.get("PORT", 8080))
+    PORT = int(os.environ.get("PORT", 10000))
 
     API_URL = (
         "https://draw.ar-lottery01.com/"
         "TrxWinGo/TrxWinGo_1M/GetHistoryIssuePage.json"
     )
 
+# Browser Request ပုံစံတူစေရန် Headers ထည့်သွင်းခြင်း
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://ar-lottery01.com/",
+    "Origin": "https://ar-lottery01.com"
+}
+
 # ================= SESSION & GLOBALS =================
 session = requests.Session()
+session.headers.update(HEADERS)
+
 win_streak = 0
 loss_streak = 0
 sent_results = set()
@@ -45,7 +56,6 @@ class DummyHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"TRX Bot is alive and running!")
 
     def log_message(self, format, *args):
-        # Console output တွေ မရှုပ်ပွစေရန် web access log ကို ပိတ်ထားခြင်း
         return
 
 def run_web_server():
@@ -65,7 +75,7 @@ def send_message(text):
                 "text": text,
                 "parse_mode": "HTML"
             },
-            timeout=5
+            timeout=8
         )
     except Exception as e:
         logger.error(f"Message Error: {e}")
@@ -79,7 +89,7 @@ def send_sticker():
                 "chat_id": Config.CHAT_ID,
                 "sticker": Config.WIN_STICKER_ID
             },
-            timeout=5
+            timeout=8
         )
     except Exception as e:
         logger.error(f"Sticker Error: {e}")
@@ -87,11 +97,16 @@ def send_sticker():
 # ================= API DATA FETCHER =================
 def get_result():
     try:
-        r = session.get(Config.API_URL, timeout=5)
-        data = r.json()
-        items = data["data"]["list"]
-        results = []
+        r = session.get(Config.API_URL, timeout=8)
+        
+        if r.status_code != 200:
+            logger.error(f"API Blocked or Error! HTTP Status: {r.status_code}")
+            return []
 
+        data = r.json()
+        items = data.get("data", {}).get("list", [])
+
+        results = []
         for item in items[:10]:
             number = int(item["number"])
             results.append({
@@ -101,7 +116,7 @@ def get_result():
             })
         return results
     except Exception as e:
-        logger.error(f"API Error: {e}")
+        logger.error(f"API Fetch Error: {e}")
         return []
 
 # ================= STATS & TABLE =================
@@ -223,7 +238,7 @@ def main():
         try:
             data = get_result()
             if not data:
-                time.sleep(1)
+                time.sleep(2)
                 continue
 
             current_period = data[0]["period"]
@@ -285,7 +300,7 @@ def main():
                 if not found:
                     logger.warning(f"No result found for: {target_period}")
 
-            time.sleep(0.5)
+            time.sleep(1)
 
         except Exception as e:
             logger.error(f"Main Loop Error: {e}")
@@ -293,9 +308,6 @@ def main():
 
 # ================= ENTRY POINT =================
 if __name__ == "__main__":
-    # Render Web Service အတွက် Background Thread ဖြင့် Web Server စတင်ခြင်း
     web_thread = threading.Thread(target=run_web_server, daemon=True)
     web_thread.start()
-
-    # Bot Loop အား စတင် run ခြင်း
     main()
